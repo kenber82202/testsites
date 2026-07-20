@@ -218,13 +218,29 @@ function setStatus(msg, kind){
   el.statusMsg.className = 'status' + (kind ? ' ' + kind : '');
 }
 
-el.loadBtn.addEventListener('click', () => loadPdf(el.urlInput.value.trim()));
+el.loadBtn.addEventListener('click', () => loadPdf({ url: el.urlInput.value.trim() }));
 
-async function loadPdf(url){
-  if(!url){ setStatus('Enter a PDF URL first.', 'err'); return; }
+el.fileBtn.addEventListener('click', () => el.fileInput.click());
+
+el.fileInput.addEventListener('change', async () => {
+  const file = el.fileInput.files && el.fileInput.files[0];
+  if(!file) return;
+  try{
+    const buffer = await file.arrayBuffer();
+    await loadPdf({ data: buffer });
+  }catch(err){
+    console.error(err);
+    setStatus('Could not read that file — try again.', 'err');
+  }finally{
+    el.fileInput.value = ''; // allow re-choosing the same file later
+  }
+});
+
+async function loadPdf(source){
+  if(!source || (!source.url && !source.data)){ setStatus('Enter a PDF URL first.', 'err'); return; }
   setStatus('Loading document…');
   try{
-    const loadingTask = pdfjsLib.getDocument({ url });
+    const loadingTask = pdfjsLib.getDocument(source);
     pdfDoc = await loadingTask.promise;
     pageNum = 1;
     zoom = 100;
@@ -237,7 +253,7 @@ async function loadPdf(url){
     el.modeHint.textContent = 'Scroll mode: drag to move around the page. Tap "Select area" to draw a crop box instead.';
   }catch(err){
     console.error(err);
-    setStatus('Could not load that PDF — the host likely blocks cross-origin access. Try a direct link from a CORS-friendly host.', 'err');
+    setStatus(source.url ? 'Could not load that PDF — the host likely blocks cross-origin access. Try a direct link from a CORS-friendly host.' : 'Could not load that PDF file — it may be corrupted or password-protected.', 'err');
   }
 }
 
