@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>PDF Snip — select an area, copy it as an image</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF Snip — drag to copy an area as an image</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   :root{
@@ -13,159 +13,96 @@
     --line: #3a2f27;
     --text: #efe8df;
     --text-dim: #a8998a;
-    --crop: #e0562d;      /* selection / crop-tool accent, darkroom safelight */
-    --crop-dim: #5c2a19;
-    --brass: #cfa76b;     /* general action accent */
+    --crop: #e0562d;      /* selection accent, darkroom safelight */
+    --brass: #cfa76b;     /* action accent */
     --brass-dim: #4a3b26;
     --ok: #7fb08a;
     --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
     --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); height:100%; }
-  .app{ display:flex; flex-direction:column; min-height:100%; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family:var(--sans); height:100%; overflow:hidden; }
+  .app{ display:flex; flex-direction:column; height:100%; }
 
   header{
-    padding: 16px 16px 12px;
+    padding: 12px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
     border-bottom: 1px solid var(--line);
     background: linear-gradient(180deg, var(--panel), var(--bg));
     flex-shrink:0;
   }
-  h1{ font-size:16px; margin:0; font-weight:650; letter-spacing:.2px; }
-  .tagline{ font-size:11.5px; color:var(--text-dim); margin-top:2px; }
-
-  .row{ display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center; }
-  input[type=text]{
-    background:var(--panel-raised); border:1px solid var(--line); color:var(--text);
-    padding:9px 10px; border-radius:6px; font-family:var(--mono); font-size:12.5px;
-    flex:1 1 200px; min-width:0;
-  }
-  input[type=text]:focus-visible, button:focus-visible{ outline:2px solid var(--brass); outline-offset:1px; }
+  h1{ font-size:15px; margin:0; font-weight:650; letter-spacing:.2px; white-space:nowrap; }
   button.btn{
-    background:var(--panel-raised); border:1px solid var(--line); color:var(--text);
-    padding:9px 13px; border-radius:6px; font-size:12.5px; font-weight:600; cursor:pointer;
-    font-family:var(--sans); white-space:nowrap;
+    background:var(--brass-dim); border:1px solid var(--brass); color:var(--brass);
+    padding:8px 13px; border-radius:6px; font-size:12.5px; font-weight:600; cursor:pointer;
+    font-family:var(--sans); white-space:nowrap; flex-shrink:0;
   }
-  button.btn:disabled{ opacity:.35; cursor:not-allowed; }
-  button.btn.primary{ background:var(--brass-dim); border-color:var(--brass); color:var(--brass); }
-  button.btn.crop{ background:var(--crop-dim); border-color:var(--crop); color:#ffb99e; }
-  button.btn.crop.active{ background:var(--crop); color:#1b0b06; }
-
-  .status{ font-family:var(--mono); font-size:11.5px; color:var(--text-dim); margin-top:10px; min-height:14px; }
+  button.btn:focus-visible{ outline:2px solid var(--brass); outline-offset:1px; }
+  .status{ font-family:var(--mono); font-size:11.5px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .status.err{ color:#e0562d; }
-  .status.ok{ color:var(--ok); }
-
-  .toolbar{
-    display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--line);
-    background:var(--panel); flex-wrap:wrap;
-  }
-  .toolbar .group{ display:flex; align-items:center; gap:6px; }
-  .toolbar span.readout{ font-family:var(--mono); font-size:12px; color:var(--text-dim); min-width:56px; text-align:center; }
-
-  .stage{ flex:1; display:flex; flex-direction:column; min-height:0; padding:14px 14px 20px; }
-  .hint{
-    font-size:12px; color:var(--text-dim); margin-bottom:8px; font-family:var(--sans);
-  }
-  .hint b{ color: var(--crop); }
 
   .viewer{
-    flex:1; min-height:280px;
-    background:#0a0908; border:1px solid var(--line); border-radius:10px;
-    overflow:auto; display:flex; justify-content:center; align-items:flex-start;
-    padding:24px; position:relative;
+    flex:1; min-height:0; overflow-y:auto; overflow-x:hidden;
+    background:#0a0908;
+    padding:20px 14px 40px;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
-  .canvas-wrap{ position:relative; line-height:0; }
-  #pageCanvas{
-    background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.5); display:block;
-    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
-  }
-  .selection-box{
-    position:absolute; border:1.5px dashed var(--crop);
-    background: rgba(224,86,45,0.14);
-    pointer-events:none;
-    display:none;
-  }
-  @media (prefers-reduced-motion: no-preference){
-    .selection-box.live{
-      animation: march 0.6s linear infinite;
-    }
-  }
-  @keyframes march{ to{ border-image-source: none; background-position: 8px 0; } }
 
   .empty{
-    margin:auto; text-align:center; color:var(--text-dim); max-width:320px; font-size:13px; line-height:1.6;
+    height:100%; display:flex; align-items:center; justify-content:center; text-align:center;
+    color:var(--text-dim); font-size:13px; line-height:1.7; padding:20px;
   }
+  .empty b{ color:var(--crop); }
 
-  .result{
-    display:none;
-    margin-top:14px; padding:14px; background:var(--panel); border:1px solid var(--line); border-radius:10px;
+  .pages{ max-width:900px; margin:0 auto; }
+  .page{
+    position:relative; margin:0 auto 22px; background:#fff; border-radius:5px;
+    box-shadow:0 8px 26px rgba(0,0,0,.5); overflow:hidden; touch-action:pinch-zoom;
   }
-  .result.show{ display:block; }
-  .result h2{ font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); margin:0 0 10px; font-weight:650; }
-  .result-body{ display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start; }
-  .result img{
-    max-width: 220px; max-height:220px; border-radius:6px; border:1px solid var(--line);
-    background:#fff; -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto;
+  .page canvas{
+    display:block; width:100%; height:100%;
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
   }
-  .result-actions{ display:flex; flex-direction:column; gap:8px; min-width:160px; }
-  .result-note{ font-size:11.5px; color:var(--text-dim); line-height:1.5; }
+  .page.loading{ background:linear-gradient(90deg, #f4f1ec, #ffffff, #f4f1ec); }
+
+  .selection-box{
+    position:absolute; border:1.5px dashed var(--crop);
+    background: rgba(224,86,45,0.14); pointer-events:none;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .selection-box{ animation: march .6s linear infinite; }
+  }
+  @keyframes march{ to{ background-position: 8px 0; } }
+
+  .snip{
+    position:absolute; border-radius:4px; overflow:hidden;
+    border:1px solid var(--brass); box-shadow:0 6px 20px rgba(0,0,0,.5);
+  }
+  .snip img{ display:block; width:100%; height:100%; -webkit-touch-callout:default; -webkit-user-select:auto; user-select:auto; }
+  .snip .close{
+    position:absolute; top:-9px; right:-9px; width:20px; height:20px; border-radius:50%;
+    background:var(--crop); color:#1b0b06; border:none; font-size:13px; line-height:20px;
+    text-align:center; cursor:pointer; padding:0; box-shadow:0 2px 6px rgba(0,0,0,.4);
+  }
+  .snip .badge{
+    position:absolute; bottom:4px; right:4px; font-size:9.5px; font-family:var(--mono);
+    background:rgba(0,0,0,.6); color:var(--ok); padding:2px 6px; border-radius:4px; white-space:nowrap;
+  }
+  .snip .badge.err{ color:#ffb99e; }
 </style>
 </head>
 <body>
-<div class="app" id="app">
+<div class="app">
   <header>
     <h1>PDF Snip</h1>
-    <div class="tagline">Load a PDF, drag a box around any part of a page, copy it as an image — paste it straight into your drawing app.</div>
-    <div class="row">
-      <input type="text" id="urlInput" value="https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf">
-      <button class="btn primary" id="loadBtn">Load URL</button>
-    </div>
-    <div class="row">
-      <button class="btn" id="fileBtn">📄 Choose a PDF from this device</button>
-      <input type="file" id="fileInput" accept="application/pdf" style="display:none;">
-    </div>
-    <div class="status" id="statusMsg">Enter a PDF URL (must allow cross-origin access) or pick a local file instead.</div>
+    <button class="btn" id="fileBtn">Choose a PDF</button>
+    <input type="file" id="fileInput" accept="application/pdf" style="display:none;">
+    <span class="status" id="statusMsg">Drag anywhere on a page to copy that area as an image.</span>
   </header>
 
-  <div class="toolbar">
-    <div class="group">
-      <button class="btn" id="prevBtn" disabled>‹</button>
-      <span class="readout" id="pageReadout">— / —</span>
-      <button class="btn" id="nextBtn" disabled>›</button>
-    </div>
-    <div class="group">
-      <button class="btn" id="zoomOutBtn" disabled>−</button>
-      <span class="readout" id="zoomReadout">100%</span>
-      <button class="btn" id="zoomInBtn" disabled>+</button>
-    </div>
-    <div class="group">
-      <button class="btn crop" id="modeBtn" disabled>✂ Select area</button>
-    </div>
-  </div>
-
-  <div class="stage">
-    <div class="hint" id="modeHint">Load a PDF above to begin.</div>
-    <div class="viewer" id="viewer">
-      <div class="empty" id="emptyState">◔<br><br>No document loaded yet.</div>
-      <div class="canvas-wrap" id="canvasWrap" style="display:none;">
-        <canvas id="pageCanvas"></canvas>
-        <div class="selection-box" id="selectionBox"></div>
-      </div>
-    </div>
-
-    <div class="result" id="resultPanel">
-      <h2>Selected area</h2>
-      <div class="result-body">
-        <img id="resultImg" alt="Cropped selection">
-        <div class="result-actions">
-          <button class="btn primary" id="copyBtn">Copy image</button>
-          <a class="btn" id="downloadLink" download="snip.png" style="text-align:center; text-decoration:none;">Save image</a>
-          <button class="btn" id="clearBtn">Clear</button>
-          <div class="result-note" id="copyNote">If "Copy image" doesn't work on your device, long-press the image above and choose <b>Copy image</b> from the menu — that works on every Android browser.</div>
-        </div>
-      </div>
-    </div>
+  <div class="viewer" id="viewer">
+    <div class="empty" id="emptyState">Choose a PDF above.<br><br>Once it loads, <b>drag</b> on any page to copy that area — pinch to zoom in for detail.</div>
+    <div class="pages" id="pages" style="display:none;"></div>
   </div>
 </div>
 
@@ -173,52 +110,29 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const el = {
-  urlInput: document.getElementById('urlInput'),
-  loadBtn: document.getElementById('loadBtn'),
   fileBtn: document.getElementById('fileBtn'),
   fileInput: document.getElementById('fileInput'),
   statusMsg: document.getElementById('statusMsg'),
-  prevBtn: document.getElementById('prevBtn'),
-  nextBtn: document.getElementById('nextBtn'),
-  pageReadout: document.getElementById('pageReadout'),
-  zoomOutBtn: document.getElementById('zoomOutBtn'),
-  zoomInBtn: document.getElementById('zoomInBtn'),
-  zoomReadout: document.getElementById('zoomReadout'),
-  modeBtn: document.getElementById('modeBtn'),
-  modeHint: document.getElementById('modeHint'),
   viewer: document.getElementById('viewer'),
   emptyState: document.getElementById('emptyState'),
-  canvasWrap: document.getElementById('canvasWrap'),
-  canvas: document.getElementById('pageCanvas'),
-  selectionBox: document.getElementById('selectionBox'),
-  resultPanel: document.getElementById('resultPanel'),
-  resultImg: document.getElementById('resultImg'),
-  copyBtn: document.getElementById('copyBtn'),
-  downloadLink: document.getElementById('downloadLink'),
-  clearBtn: document.getElementById('clearBtn'),
-  copyNote: document.getElementById('copyNote'),
+  pages: document.getElementById('pages'),
 };
 
-const RENDER_MULTIPLIER = 3; // internal bitmap resolution headroom for crisp zoom/crop
-const ZOOM_MIN = 25, ZOOM_MAX = 400, ZOOM_STEP = 20;
+const RENDER_MULTIPLIER = 3; // internal bitmap resolution headroom for crisp pinch-zoom & crop
+const MIN_DRAG = 6; // px, ignore accidental taps
 
 let pdfDoc = null;
-let pageNum = 1;
-let zoom = 100;
-let baseViewport = null;
-let mode = 'scroll'; // 'scroll' | 'select'
+let pageMetas = [];      // { num, wrapper, canvas, viewportBase, rendered }
+let observer = null;
 let dragging = false;
-let dragStartCss = null;
-let lastObjectUrl = null;
-let lastBlob = null;
-let renderToken = 0;
+let dragStart = null;    // {x,y} in canvas CSS px
+let dragMeta = null;     // the pageMeta being dragged on
+let activeBox = null;    // current selection-box element
 
 function setStatus(msg, kind){
   el.statusMsg.textContent = msg || '';
   el.statusMsg.className = 'status' + (kind ? ' ' + kind : '');
 }
-
-el.loadBtn.addEventListener('click', () => loadPdf({ url: el.urlInput.value.trim() }));
 
 el.fileBtn.addEventListener('click', () => el.fileInput.click());
 
@@ -227,147 +141,166 @@ el.fileInput.addEventListener('change', async () => {
   if(!file) return;
   try{
     const buffer = await file.arrayBuffer();
-    await loadPdf({ data: buffer });
+    await loadPdf(buffer, file.name);
   }catch(err){
     console.error(err);
     setStatus('Could not read that file — try again.', 'err');
   }finally{
-    el.fileInput.value = ''; // allow re-choosing the same file later
+    el.fileInput.value = ''; // allow re-choosing the same file
   }
 });
 
-async function loadPdf(source){
-  if(!source || (!source.url && !source.data)){ setStatus('Enter a PDF URL first.', 'err'); return; }
-  setStatus('Loading document…');
+async function loadPdf(data, filename){
+  setStatus(`Loading ${filename}…`);
+  if(observer) observer.disconnect();
+  el.pages.innerHTML = '';
+  pageMetas = [];
+
   try{
-    const loadingTask = pdfjsLib.getDocument(source);
-    pdfDoc = await loadingTask.promise;
-    pageNum = 1;
-    zoom = 100;
+    pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+
+    const pageObjs = await Promise.all(
+      Array.from({ length: pdfDoc.numPages }, (_, i) => pdfDoc.getPage(i + 1))
+    );
+
+    const availWidth = Math.max(200, el.pages.clientWidth || el.viewer.clientWidth - 28);
+
+    pageObjs.forEach((page, i) => {
+      const viewportBase = page.getViewport({ scale: 1 });
+      const displayW = Math.min(availWidth, viewportBase.width);
+      const displayH = displayW * (viewportBase.height / viewportBase.width);
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'page loading';
+      wrapper.style.width = displayW + 'px';
+      wrapper.style.height = displayH + 'px';
+      el.pages.appendChild(wrapper);
+
+      pageMetas.push({ num: i + 1, page, wrapper, canvas: null, viewportBase, rendered: false });
+    });
+
     el.emptyState.style.display = 'none';
-    el.canvasWrap.style.display = '';
-    [el.prevBtn, el.nextBtn, el.zoomOutBtn, el.zoomInBtn, el.modeBtn].forEach(b => b.disabled = false);
-    await renderPage(pageNum);
-    fitToViewer();
-    setStatus(`Loaded — ${pdfDoc.numPages} page(s).`, 'ok');
-    el.modeHint.textContent = 'Scroll mode: drag to move around the page. Tap "Select area" to draw a crop box instead.';
+    el.pages.style.display = '';
+
+    observer = new IntersectionObserver(onIntersect, { root: el.viewer, rootMargin: '800px 0px' });
+    pageMetas.forEach(meta => observer.observe(meta.wrapper));
+
+    setStatus(`${filename} — ${pdfDoc.numPages} page${pdfDoc.numPages === 1 ? '' : 's'}`, 'ok');
   }catch(err){
     console.error(err);
-    setStatus(source.url ? 'Could not load that PDF — the host likely blocks cross-origin access. Try a direct link from a CORS-friendly host.' : 'Could not load that PDF file — it may be corrupted or password-protected.', 'err');
+    setStatus('Could not load that PDF — it may be corrupted or password-protected.', 'err');
+    el.emptyState.style.display = '';
+    el.pages.style.display = 'none';
   }
 }
 
-async function renderPage(num){
-  if(!pdfDoc) return;
-  const myToken = ++renderToken;
-  const page = await pdfDoc.getPage(num);
-  baseViewport = page.getViewport({ scale: 1 });
-  const renderViewport = page.getViewport({ scale: (zoom/100) * RENDER_MULTIPLIER });
-  if(myToken !== renderToken) return;
-
-  el.canvas.width = Math.round(renderViewport.width);
-  el.canvas.height = Math.round(renderViewport.height);
-  el.canvas.style.width = Math.round(baseViewport.width * zoom/100) + 'px';
-  el.canvas.style.height = Math.round(baseViewport.height * zoom/100) + 'px';
-
-  const ctx = el.canvas.getContext('2d');
-  await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
-  if(myToken !== renderToken) return;
-
-  pageNum = num;
-  el.pageReadout.textContent = `${pageNum} / ${pdfDoc.numPages}`;
-  el.zoomReadout.textContent = `${zoom}%`;
-  el.prevBtn.disabled = pageNum <= 1;
-  el.nextBtn.disabled = pageNum >= pdfDoc.numPages;
-  hideSelectionBox();
-}
-
-function fitToViewer(){
-  if(!baseViewport) return;
-  const available = el.viewer.clientWidth - 48; // account for padding
-  if(available > 0){
-    const fitZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.floor((available / baseViewport.width) * 100)));
-    zoom = fitZoom;
-    renderPage(pageNum);
+function onIntersect(entries){
+  for(const entry of entries){
+    if(!entry.isIntersecting) continue;
+    const meta = pageMetas.find(m => m.wrapper === entry.target);
+    if(!meta || meta.rendered) continue;
+    renderPage(meta);
+    observer.unobserve(entry.target);
   }
 }
 
-el.prevBtn.addEventListener('click', () => { if(pageNum > 1) renderPage(pageNum - 1); });
-el.nextBtn.addEventListener('click', () => { if(pdfDoc && pageNum < pdfDoc.numPages) renderPage(pageNum + 1); });
-el.zoomOutBtn.addEventListener('click', () => { zoom = Math.max(ZOOM_MIN, zoom - ZOOM_STEP); renderPage(pageNum); });
-el.zoomInBtn.addEventListener('click', () => { zoom = Math.min(ZOOM_MAX, zoom + ZOOM_STEP); renderPage(pageNum); });
+async function renderPage(meta){
+  const displayW = meta.wrapper.clientWidth;
+  const displayH = meta.wrapper.clientHeight;
+  const scale = (displayW / meta.viewportBase.width) * RENDER_MULTIPLIER;
+  const renderViewport = meta.page.getViewport({ scale });
 
-el.modeBtn.addEventListener('click', () => {
-  mode = mode === 'scroll' ? 'select' : 'scroll';
-  el.modeBtn.classList.toggle('active', mode === 'select');
-  el.modeBtn.textContent = mode === 'select' ? '✂ Selecting…' : '✂ Select area';
-  el.canvas.style.touchAction = mode === 'select' ? 'none' : 'auto';
-  el.modeHint.textContent = mode === 'select'
-    ? 'Select mode: drag across the page to draw a crop box. Release to capture it.'
-    : 'Scroll mode: drag to move around the page. Tap "Select area" to draw a crop box instead.';
-  hideSelectionBox();
-});
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(renderViewport.width);
+  canvas.height = Math.round(renderViewport.height);
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
 
-el.canvas.addEventListener('contextmenu', e => e.preventDefault());
+  const ctx = canvas.getContext('2d');
+  await meta.page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
 
-el.canvas.addEventListener('pointerdown', (e) => {
-  if(mode !== 'select') return;
+  meta.wrapper.classList.remove('loading');
+  meta.wrapper.appendChild(canvas);
+  meta.canvas = canvas;
+  meta.rendered = true;
+}
+
+// --- Always-on drag-to-select, delegated across all rendered page canvases ---
+
+el.pages.addEventListener('contextmenu', e => e.preventDefault());
+
+el.pages.addEventListener('pointerdown', (e) => {
+  const canvas = e.target.closest('.page canvas');
+  if(!canvas) return;
+  const meta = pageMetas.find(m => m.canvas === canvas);
+  if(!meta) return;
+
   dragging = true;
-  el.canvas.setPointerCapture(e.pointerId);
-  const rect = el.canvas.getBoundingClientRect();
-  dragStartCss = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  el.selectionBox.style.display = 'block';
-  el.selectionBox.classList.add('live');
-  updateSelectionBoxCss(dragStartCss.x, dragStartCss.y, 0, 0);
+  dragMeta = meta;
+  canvas.setPointerCapture(e.pointerId);
+  const rect = canvas.getBoundingClientRect();
+  dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+  activeBox = document.createElement('div');
+  activeBox.className = 'selection-box';
+  meta.wrapper.appendChild(activeBox);
+  positionBox(activeBox, dragStart.x, dragStart.y, 0, 0);
 });
 
-el.canvas.addEventListener('pointermove', (e) => {
-  if(!dragging) return;
-  const rect = el.canvas.getBoundingClientRect();
+el.pages.addEventListener('pointermove', (e) => {
+  if(!dragging || !dragMeta) return;
+  const rect = dragMeta.canvas.getBoundingClientRect();
   const curX = clamp(e.clientX - rect.left, 0, rect.width);
   const curY = clamp(e.clientY - rect.top, 0, rect.height);
-  const x = Math.min(dragStartCss.x, curX);
-  const y = Math.min(dragStartCss.y, curY);
-  const w = Math.abs(curX - dragStartCss.x);
-  const h = Math.abs(curY - dragStartCss.y);
-  updateSelectionBoxCss(x, y, w, h);
+  const x = Math.min(dragStart.x, curX);
+  const y = Math.min(dragStart.y, curY);
+  const w = Math.abs(curX - dragStart.x);
+  const h = Math.abs(curY - dragStart.y);
+  positionBox(activeBox, x, y, w, h);
 });
 
-el.canvas.addEventListener('pointerup', (e) => {
-  if(!dragging) return;
+el.pages.addEventListener('pointerup', (e) => {
+  if(!dragging || !dragMeta) return;
+  finishDrag(e);
+});
+
+el.pages.addEventListener('pointercancel', () => {
+  if(activeBox) activeBox.remove();
+  dragging = false; dragMeta = null; activeBox = null;
+});
+
+function finishDrag(e){
+  const meta = dragMeta;
+  const rect = meta.canvas.getBoundingClientRect();
+  const curX = clamp(e.clientX - rect.left, 0, rect.width);
+  const curY = clamp(e.clientY - rect.top, 0, rect.height);
+  const x = Math.min(dragStart.x, curX);
+  const y = Math.min(dragStart.y, curY);
+  const w = Math.abs(curX - dragStart.x);
+  const h = Math.abs(curY - dragStart.y);
+
   dragging = false;
-  el.selectionBox.classList.remove('live');
-  const rect = el.canvas.getBoundingClientRect();
-  const curX = clamp(e.clientX - rect.left, 0, rect.width);
-  const curY = clamp(e.clientY - rect.top, 0, rect.height);
-  const cssX = Math.min(dragStartCss.x, curX);
-  const cssY = Math.min(dragStartCss.y, curY);
-  const cssW = Math.abs(curX - dragStartCss.x);
-  const cssH = Math.abs(curY - dragStartCss.y);
-  if(cssW < 6 || cssH < 6){
-    hideSelectionBox();
-    return; // too small, likely an accidental tap
-  }
-  captureSelection(cssX, cssY, cssW, cssH, rect);
-});
+  dragMeta = null;
+  if(activeBox){ activeBox.remove(); activeBox = null; }
+
+  if(w < MIN_DRAG || h < MIN_DRAG) return; // accidental tap
+
+  captureSelection(meta, x, y, w, h);
+}
 
 function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
 
-function updateSelectionBoxCss(x, y, w, h){
-  el.selectionBox.style.left = x + 'px';
-  el.selectionBox.style.top = y + 'px';
-  el.selectionBox.style.width = w + 'px';
-  el.selectionBox.style.height = h + 'px';
+function positionBox(box, x, y, w, h){
+  box.style.left = x + 'px';
+  box.style.top = y + 'px';
+  box.style.width = w + 'px';
+  box.style.height = h + 'px';
 }
 
-function hideSelectionBox(){
-  el.selectionBox.style.display = 'none';
-  el.selectionBox.classList.remove('live');
-}
-
-function captureSelection(cssX, cssY, cssW, cssH, rect){
-  const scaleX = el.canvas.width / rect.width;
-  const scaleY = el.canvas.height / rect.height;
+function captureSelection(meta, cssX, cssY, cssW, cssH){
+  const canvas = meta.canvas;
+  const scaleX = canvas.width / canvas.clientWidth;
+  const scaleY = canvas.height / canvas.clientHeight;
   const sx = Math.round(cssX * scaleX);
   const sy = Math.round(cssY * scaleY);
   const sw = Math.round(cssW * scaleX);
@@ -376,42 +309,70 @@ function captureSelection(cssX, cssY, cssW, cssH, rect){
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = sw;
   cropCanvas.height = sh;
-  const cctx = cropCanvas.getContext('2d');
-  cctx.drawImage(el.canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+  cropCanvas.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
 
-  cropCanvas.toBlob((blob) => {
+  cropCanvas.toBlob(async (blob) => {
     if(!blob){ setStatus('Could not capture that selection — try again.', 'err'); return; }
-    lastBlob = blob;
-    if(lastObjectUrl) URL.revokeObjectURL(lastObjectUrl);
-    lastObjectUrl = URL.createObjectURL(blob);
-    el.resultImg.src = lastObjectUrl;
-    el.downloadLink.href = lastObjectUrl;
-    el.resultPanel.classList.add('show');
-    el.copyNote.style.display = 'block';
-    setStatus('Selection captured.', 'ok');
-    el.resultPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const badge = addFloatingSnip(meta, cssX, cssY, cssW, cssH, blob);
+
+    try{
+      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      setStatus('Copied to clipboard.', 'ok');
+    }catch(err){
+      console.error(err);
+      setStatus('Auto-copy blocked by browser — long-press the image to copy.', 'err');
+      badge.textContent = 'long-press to copy';
+      badge.classList.add('err');
+    }
   }, 'image/png');
 }
 
-el.copyBtn.addEventListener('click', async () => {
-  if(!lastBlob){ return; }
-  try{
-    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': lastBlob }) ]);
-    setStatus('Copied — paste it into your drawing app.', 'ok');
-  }catch(err){
-    console.error(err);
-    setStatus('Copy button didn\u2019t work on this browser — long-press the image above and choose "Copy image" instead.', 'err');
-  }
-});
+function addFloatingSnip(meta, x, y, w, h, blob){
+  const url = URL.createObjectURL(blob);
 
-el.clearBtn.addEventListener('click', () => {
-  el.resultPanel.classList.remove('show');
-  lastBlob = null;
-  if(lastObjectUrl){ URL.revokeObjectURL(lastObjectUrl); lastObjectUrl = null; }
-  hideSelectionBox();
-});
+  const snip = document.createElement('div');
+  snip.className = 'snip';
+  positionBox(snip, x, y, w, h);
 
-window.addEventListener('resize', () => { if(pdfDoc) hideSelectionBox(); });
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = 'Copied selection';
+  snip.appendChild(img);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'close';
+  closeBtn.textContent = '\u00d7';
+  closeBtn.setAttribute('aria-label', 'Dismiss');
+  closeBtn.addEventListener('click', () => {
+    URL.revokeObjectURL(url);
+    snip.remove();
+  });
+  snip.appendChild(closeBtn);
+
+  const badge = document.createElement('span');
+  badge.className = 'badge';
+  badge.textContent = 'copied';
+  snip.appendChild(badge);
+
+  meta.wrapper.appendChild(snip);
+  return badge;
+}
+
+// Reflow page sizing on resize (re-style only; rendered bitmaps keep their resolution headroom)
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if(!pdfDoc) return;
+    const availWidth = Math.max(200, el.pages.clientWidth || el.viewer.clientWidth - 28);
+    pageMetas.forEach(meta => {
+      const displayW = Math.min(availWidth, meta.viewportBase.width);
+      const displayH = displayW * (meta.viewportBase.height / meta.viewportBase.width);
+      meta.wrapper.style.width = displayW + 'px';
+      meta.wrapper.style.height = displayH + 'px';
+    });
+  }, 150);
+});
 </script>
 </body>
 </html>
